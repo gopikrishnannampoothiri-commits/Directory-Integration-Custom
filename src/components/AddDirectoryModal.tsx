@@ -341,7 +341,7 @@ export const AddDirectoryModal: React.FC<AddDirectoryModalProps> = ({
                 lineHeight: 1.4
               }}
             >
-              Connect any directory via SCIM v2 / REST with automated Genie assistance
+              Connect any directory with automated Genie assistance
             </div>
           </div>
           <div style={{ paddingLeft: '16px', flexShrink: 0 }}>

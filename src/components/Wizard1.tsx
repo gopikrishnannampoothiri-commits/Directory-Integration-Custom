@@ -157,13 +157,13 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
     steps: string[];
     errorMessage?: string;
     errorDetails?: string;
-    simulateFailure: boolean;
   }>({
     state: 'idle',
     stepIndex: 0,
-    steps: [],
-    simulateFailure: false
+    steps: []
   });
+
+  const [configureAttempts, setConfigureAttempts] = useState<number>(0);
 
   const validationTimeouts = useRef<NodeJS.Timeout[]>([]);
   const clearValidationTimeouts = () => {
@@ -428,8 +428,11 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
     if (!isConfigValid()) return;
     clearValidationTimeouts();
 
+    // First click shows simple inline error; second click succeeds and allows to proceed
+    const isFail = configureAttempts === 0;
+    setConfigureAttempts((prev) => prev + 1);
+
     let methodSteps: string[] = [];
-    let isFail = inlineAuthStatus.simulateFailure;
     let failTitle = '';
     let failMsg = '';
     let identityDesc = '';
@@ -440,16 +443,8 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
         `Connecting to directory endpoint (${baseUrl || 'https://api.youridp.com/v2'}) over TLS 1.3`,
         'Authenticating request and testing directory read permissions'
       ];
-      if (
-        apiKeyVal.toLowerCase().includes('fail') ||
-        apiKeyVal.toLowerCase().includes('invalid') ||
-        apiKeyVal.toLowerCase().includes('error') ||
-        apiKeyVal.trim().length < 6
-      ) {
-        isFail = true;
-      }
       failTitle = 'Authentication Failed: 401 Unauthorized';
-      failMsg = `The provided API Key was rejected by ${baseUrl || 'the directory endpoint'}. Ensure the key has directory read privileges and the header name matches your source IdP specification.`;
+      failMsg = `Unable to verify API Key with directory endpoint. Please check your credentials and click Configure again.`;
       identityDesc = `API Key (${apiKeyHeader || 'X-API-Key'})`;
     } else if (authMethod === 'bearer') {
       methodSteps = [
@@ -457,17 +452,8 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
         `Establishing secure TLS 1.3 session with ${baseUrl || 'directory host'}`,
         'Validating token signature, expiration, and directory access claims'
       ];
-      if (
-        bearerToken.toLowerCase().includes('fail') ||
-        bearerToken.toLowerCase().includes('invalid') ||
-        bearerToken.toLowerCase().includes('expired') ||
-        bearerToken.toLowerCase().includes('error') ||
-        bearerToken.trim().length < 8
-      ) {
-        isFail = true;
-      }
       failTitle = 'Token Validation Failed: 401 Unauthorized';
-      failMsg = 'The provided Bearer token is expired, revoked, or has insufficient scopes. Check your Personal Access Token (PAT) settings in your identity provider.';
+      failMsg = 'The provided Bearer token was rejected by the directory endpoint. Please check your token and click Configure again.';
       identityDesc = 'Bearer Token (PAT)';
     } else if (authMethod === 'basic') {
       methodSteps = [
@@ -475,18 +461,8 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
         `Establishing secure HTTPS connection with ${baseUrl || 'directory endpoint'}`,
         `Authenticating user "${basicUser}" and verifying directory tree access`
       ];
-      if (
-        basicUser.toLowerCase().includes('fail') ||
-        basicPass.toLowerCase().includes('fail') ||
-        basicPass.toLowerCase().includes('invalid') ||
-        basicPass.toLowerCase().includes('wrong') ||
-        basicPass.toLowerCase().includes('error') ||
-        basicPass.trim().length < 3
-      ) {
-        isFail = true;
-      }
       failTitle = 'Authentication Failed: 401 Invalid Credentials';
-      failMsg = `Authentication failed for user "${basicUser}". Please ensure the credentials are correct and the account has privileges to query organizational objects.`;
+      failMsg = `Invalid username or password for this directory endpoint. Please check your credentials and click Configure again.`;
       identityDesc = `Basic Auth (${basicUser})`;
     } else if (authMethod === 'customheader') {
       const activeCount = customHeaders.filter((h) => h.name.trim() && h.value.trim()).length;
@@ -495,19 +471,8 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
         `Transmitting gateway probe with specified custom headers to ${baseUrl || 'gateway'}`,
         'Verifying gateway routing and directory API handshake'
       ];
-      if (
-        customHeaders.some(
-          (h) =>
-            h.name.toLowerCase().includes('fail') ||
-            h.value.toLowerCase().includes('fail') ||
-            h.name.toLowerCase().includes('invalid') ||
-            h.value.toLowerCase().includes('invalid')
-        )
-      ) {
-        isFail = true;
-      }
       failTitle = 'Header Validation Failed: 400 Bad Request';
-      failMsg = 'Gateway rejected custom headers. Check header names, authentication values, and firewall allowlist settings.';
+      failMsg = 'Gateway rejected custom headers. Please check your header names and values and click Configure again.';
       identityDesc = `Custom Headers (${activeCount} configured)`;
     }
 
@@ -1162,6 +1127,7 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                       className={`auth-tile ${authMethod === m ? 'selected' : ''}`}
                       onClick={() => {
                         setAuthMethod(m);
+                        setConfigureAttempts(0);
                         invalidateAuth();
                       }}
                     >
@@ -1515,52 +1481,7 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                 )}
               </button>
 
-              {/* Simulation helper for non-OAuth methods */}
-              {authMethod !== 'oauth2' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#6B7280' }}>
-                  <span>Simulate outcome:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInlineAuthStatus((prev) => ({ ...prev, simulateFailure: false }));
-                    }}
-                    style={{
-                      padding: '3px 9px',
-                      borderRadius: '4px',
-                      fontSize: '11.5px',
-                      border: '1px solid',
-                      cursor: 'pointer',
-                      background: !inlineAuthStatus.simulateFailure ? '#DCFCE7' : '#F9FAFB',
-                      borderColor: !inlineAuthStatus.simulateFailure ? '#86EFAC' : '#E5E7EB',
-                      color: !inlineAuthStatus.simulateFailure ? '#15803D' : '#6B7280',
-                      fontWeight: !inlineAuthStatus.simulateFailure ? 600 : 400
-                    }}
-                    title="Simulate successful configuration verification"
-                  >
-                    ✓ Success
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInlineAuthStatus((prev) => ({ ...prev, simulateFailure: true }));
-                    }}
-                    style={{
-                      padding: '3px 9px',
-                      borderRadius: '4px',
-                      fontSize: '11.5px',
-                      border: '1px solid',
-                      cursor: 'pointer',
-                      background: inlineAuthStatus.simulateFailure ? '#FEE2E2' : '#F9FAFB',
-                      borderColor: inlineAuthStatus.simulateFailure ? '#FCA5A5' : '#E5E7EB',
-                      color: inlineAuthStatus.simulateFailure ? '#B91C1C' : '#6B7280',
-                      fontWeight: inlineAuthStatus.simulateFailure ? 600 : 400
-                    }}
-                    title="Simulate validation failure to test error & retry handling"
-                  >
-                    ✗ Failure
-                  </button>
-                </div>
-              )}
+
 
               {!isConfigValid() && (
                 <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
@@ -1645,55 +1566,27 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
               </div>
             )}
 
-            {/* INLINE FAILURE STATE */}
+            {/* INLINE ERROR MESSAGE (Shown on first click) */}
             {authMethod !== 'oauth2' && inlineAuthStatus.state === 'failure' && (
               <div
                 style={{
                   background: '#FEF2F2',
                   border: '1px solid #FECACA',
                   borderRadius: '8px',
-                  padding: '16px 18px',
-                  marginTop: '16px'
+                  padding: '12px 16px',
+                  marginTop: '16px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                  <div style={{ color: '#DC2626', marginTop: '2px' }}>
-                    <AlertIcon size={20} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <h4 style={{ fontSize: '14.5px', fontWeight: 600, color: '#991B1B', margin: '0 0 4px 0' }}>
-                      {inlineAuthStatus.errorMessage || 'Authentication Failed'}
-                    </h4>
-                    <p style={{ fontSize: '13px', color: '#B91C1C', margin: '0 0 14px 0', lineHeight: 1.5 }}>
-                      {inlineAuthStatus.errorDetails ||
-                        'The credentials entered could not be verified by the identity provider endpoint. Please inspect the parameters and retry.'}
-                    </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-primary"
-                        onClick={runInlineValidation}
-                        style={{ background: '#DC2626', borderColor: '#DC2626', gap: '6px' }}
-                      >
-                        <RefreshIcon size={13} /> Retry Verification
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline"
-                        onClick={() => {
-                          setInlineAuthStatus((prev) => ({
-                            ...prev,
-                            state: 'idle',
-                            errorMessage: undefined,
-                            errorDetails: undefined
-                          }));
-                        }}
-                        style={{ background: '#FFFFFF', borderColor: '#FCA5A5', color: '#991B1B' }}
-                      >
-                        Edit Credentials
-                      </button>
-                    </div>
-                  </div>
+                <div style={{ color: '#DC2626', marginTop: '1px', flexShrink: 0 }}>
+                  <AlertIcon size={18} />
+                </div>
+                <div style={{ fontSize: '13px', color: '#991B1B', lineHeight: 1.5 }}>
+                  <strong>{inlineAuthStatus.errorMessage || 'Authentication Failed'}:</strong>{' '}
+                  {inlineAuthStatus.errorDetails ||
+                    'Unable to verify credentials with directory endpoint. Please check your credentials and click Configure again.'}
                 </div>
               </div>
             )}
