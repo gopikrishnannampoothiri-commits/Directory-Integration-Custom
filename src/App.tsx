@@ -8,7 +8,15 @@ import { AssetMigrationWizard } from './components/AssetMigrationWizard.tsx';
 import { AddDirectoryModal } from './components/AddDirectoryModal.tsx';
 import { ItemDetailModal } from './components/ItemDetailModal.tsx';
 import { ToastContainer } from './components/ToastContainer.tsx';
+import { UsersView } from './components/UsersView.tsx';
+import { GroupsView } from './components/GroupsView.tsx';
+import { OrganizationalUnitsView } from './components/OrganizationalUnitsView.tsx';
+import { SecurityPolicyView } from './components/SecurityPolicyView.tsx';
+import { AccountMergeModal } from './components/AccountMergeModal.tsx';
+import { SplitSelectorModal } from './components/SplitSelectorModal.tsx';
 import { getInitialCategoryStates } from './data/mockData.ts';
+import { INITIAL_USERS, INITIAL_GROUPS, OU_TREE_DATA } from './data/idpData.ts';
+import { UserRecord, GroupRecord } from './types.ts';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('list');
@@ -39,6 +47,13 @@ export default function App() {
     category: 'apps' | 'policies' | 'factors' | 'roles';
     index: number;
   } | null>(null);
+  const [modalMergeOpen, setModalMergeOpen] = useState<boolean>(false);
+  const [mergeSourceUser, setMergeSourceUser] = useState<UserRecord | null>(null);
+  const [modalSplitOpen, setModalSplitOpen] = useState<boolean>(false);
+
+  // Users and Groups directory data state
+  const [users, setUsers] = useState<UserRecord[]>(INITIAL_USERS);
+  const [groups, setGroups] = useState<GroupRecord[]>(INITIAL_GROUPS);
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -83,7 +98,7 @@ export default function App() {
           </a>
           <a
             className={activeMainNav === 'security' ? 'active' : ''}
-            onClick={() => showToast('View not included in this prototype')}
+            onClick={() => setActiveMainNav('security')}
           >
             Security
           </a>
@@ -131,20 +146,20 @@ export default function App() {
       {activeMainNav === 'directory' && (
         <nav className="subnav">
           <a
-            className=""
-            onClick={() => showToast('View not included in this prototype')}
+            className={currentScreen === 'users' ? 'active' : ''}
+            onClick={() => setCurrentScreen('users')}
           >
             Users
           </a>
           <a
-            className=""
-            onClick={() => showToast('View not included in this prototype')}
+            className={currentScreen === 'groups' ? 'active' : ''}
+            onClick={() => setCurrentScreen('groups')}
           >
             Groups
           </a>
           <a
-            className=""
-            onClick={() => showToast('View not included in this prototype')}
+            className={currentScreen === 'ou' ? 'active' : ''}
+            onClick={() => setCurrentScreen('ou')}
           >
             OU
           </a>
@@ -167,8 +182,45 @@ export default function App() {
       {/* Main Content Area */}
       <main className="shell-main">
         <div className="content-wrap">
+          {/* Security Main Navigation Tab */}
+          {activeMainNav === 'security' && (
+            <SecurityPolicyView showToast={showToast} />
+          )}
+
+          {/* Directory Main Navigation Views */}
+          {activeMainNav === 'directory' && currentScreen === 'users' && (
+            <UsersView
+              users={users}
+              onOpenMergeModal={(sourceUser) => {
+                setMergeSourceUser(sourceUser || null);
+                setModalMergeOpen(true);
+              }}
+              onOpenSplitAssignModal={() => setModalSplitOpen(true)}
+              showToast={showToast}
+              onDeleteUser={(id) => {
+                setUsers((prev) => prev.filter((u) => u.id !== id));
+              }}
+            />
+          )}
+
+          {activeMainNav === 'directory' && currentScreen === 'groups' && (
+            <GroupsView
+              groups={groups}
+              onOpenSplitAssignModal={() => setModalSplitOpen(true)}
+              showToast={showToast}
+            />
+          )}
+
+          {activeMainNav === 'directory' && currentScreen === 'ou' && (
+            <OrganizationalUnitsView
+              ouTree={OU_TREE_DATA}
+              users={users}
+              showToast={showToast}
+            />
+          )}
+
           {/* Directory Integration List */}
-          {currentScreen === 'list' && (
+          {activeMainNav === 'directory' && currentScreen === 'list' && (
             <DirectoryList
               onOpenAddModal={() => setModalAddOpen(true)}
               onOpenDashboard={() => {
@@ -188,7 +240,7 @@ export default function App() {
           )}
 
           {/* Custom Integration Wizard (Pattern D in Step 4) */}
-          {currentScreen === 'wizard1' && (
+          {activeMainNav === 'directory' && currentScreen === 'wizard1' && (
             <Wizard1
               onCancel={() => setCurrentScreen('list')}
               onFinish={(config) => {
@@ -205,7 +257,7 @@ export default function App() {
           )}
 
           {/* Dashboard Review */}
-          {currentScreen === 'dashboard' && (
+          {activeMainNav === 'directory' && currentScreen === 'dashboard' && (
             <Dashboard
               dashboardState={dashboardState}
               categoryStates={categoryStates}
@@ -224,7 +276,7 @@ export default function App() {
           )}
 
           {/* Guided Asset Migration Wizard (Independent 6-step workflow per category) */}
-          {currentScreen === 'wizard2' && (
+          {activeMainNav === 'directory' && currentScreen === 'wizard2' && (
             <AssetMigrationWizard
               category={activeMigrationCategory}
               state={categoryStates[activeMigrationCategory]}
@@ -294,7 +346,51 @@ export default function App() {
         showToast={showToast}
       />
 
-      {/* 3. Floating Toast Banner at top-center */}
+      {/* 3. Account Merge Modal */}
+      <AccountMergeModal
+        isOpen={modalMergeOpen}
+        onClose={() => {
+          setModalMergeOpen(false);
+          setMergeSourceUser(null);
+        }}
+        sourceUser={mergeSourceUser}
+        allUsers={users}
+        onConfirmMerge={(sourceId, targetId) => {
+          const src = users.find((u) => u.id === sourceId);
+          const tgt = users.find((u) => u.id === targetId);
+          if (src && tgt) {
+            setUsers((prev) =>
+              prev.map((u) => {
+                if (u.id === targetId) {
+                  const mergedGroups = Array.from(new Set([...u.groups, ...src.groups]));
+                  return {
+                    ...u,
+                    groups: mergedGroups,
+                    policiesCount: Math.max(u.policiesCount, src.policiesCount)
+                  };
+                }
+                if (u.id === sourceId) {
+                  return { ...u, status: 'inactive' };
+                }
+                return u;
+              })
+            );
+            showToast(`Merged ${src.name} into ${tgt.name} successfully`);
+          }
+        }}
+      />
+
+      {/* 4. Split / Group Assignment Selector Modal */}
+      <SplitSelectorModal
+        isOpen={modalSplitOpen}
+        onClose={() => setModalSplitOpen(false)}
+        users={users}
+        onConfirmSelection={(selectedUserIds) => {
+          showToast(`Assigned ${selectedUserIds.length} users to group`);
+        }}
+      />
+
+      {/* 5. Floating Toast Banner at top-center */}
       <ToastContainer toasts={toasts} />
     </div>
   );

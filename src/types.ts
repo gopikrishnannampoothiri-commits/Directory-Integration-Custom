@@ -62,7 +62,7 @@ export interface ToastMessage {
   text: string;
 }
 
-export type ScreenType = 'list' | 'wizard1' | 'dashboard' | 'wizard2';
+export type ScreenType = 'list' | 'wizard1' | 'dashboard' | 'wizard2' | 'users' | 'groups' | 'ou';
 export type DashboardState = 'partial' | 'complete';
 export type AuthMethodType = 'oauth2' | 'apikey' | 'bearer' | 'basic' | 'customheader';
 
