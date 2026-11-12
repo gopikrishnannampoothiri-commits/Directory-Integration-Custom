@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SearchIcon, PlugIcon, CheckIcon, KeyIcon, ArrowRightIcon, TrashIcon, InfoCircleIcon, CloseIcon, ShieldIcon, AlertIcon, LockIcon, ChevronDownIcon } from './icons.tsx';
+import { SearchIcon, PlugIcon, CheckIcon, KeyIcon, ArrowRightIcon, TrashIcon, InfoCircleIcon, CloseIcon, ShieldIcon, AlertIcon, LockIcon, ChevronDownIcon, RefreshIcon } from './icons.tsx';
 import { MappingRow, TransformRule, FilterCondition, AuthMethodType } from '../types.ts';
 import { initialMappingData } from '../data/mockData.ts';
 
@@ -136,7 +136,10 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
   // Step 2 Auth
   const [authMethod, setAuthMethod] = useState<AuthMethodType>('oauth2');
   const [apiKeyVal, setApiKeyVal] = useState<string>('');
+  const [apiKeyHeader, setApiKeyHeader] = useState<string>('X-API-Key');
+  const [apiKeyPrefix, setApiKeyPrefix] = useState<string>('');
   const [bearerToken, setBearerToken] = useState<string>('');
+  const [bearerHeaderOverride, setBearerHeaderOverride] = useState<string>('');
   const [basicUser, setBasicUser] = useState<string>('hexnode-sync');
   const [basicPass, setBasicPass] = useState<string>('');
   const [oauthTokenUrl, setOauthTokenUrl] = useState<string>('https://auth.meridianid.com/oauth2/token');
@@ -146,6 +149,31 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
   const [customHeaders, setCustomHeaders] = useState<{ name: string; value: string }[]>([
     { name: '', value: '' }
   ]);
+
+  // Inline Validation & Verification State for Non-OAuth flows (API Key, Bearer, Basic, Custom Header)
+  const [inlineAuthStatus, setInlineAuthStatus] = useState<{
+    state: 'idle' | 'validating' | 'success' | 'failure';
+    stepIndex: number;
+    steps: string[];
+    errorMessage?: string;
+    errorDetails?: string;
+    simulateFailure: boolean;
+  }>({
+    state: 'idle',
+    stepIndex: 0,
+    steps: [],
+    simulateFailure: false
+  });
+
+  const validationTimeouts = useRef<NodeJS.Timeout[]>([]);
+  const clearValidationTimeouts = () => {
+    validationTimeouts.current.forEach((t) => clearTimeout(t));
+    validationTimeouts.current = [];
+  };
+
+  useEffect(() => {
+    return () => clearValidationTimeouts();
+  }, []);
 
   // Auth Status & Validation Tracking
   const [authStatus, setAuthStatus] = useState<{
@@ -182,17 +210,6 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
     verifyCode: '',
     isVerifying: false,
     isRedirecting: false
-  });
-
-  // Non-OAuth Validation Modal State
-  const [nonOauthModal, setNonOauthModal] = useState<{
-    isOpen: boolean;
-    step: number;
-    complete: boolean;
-  }>({
-    isOpen: false,
-    step: 0,
-    complete: false
   });
 
   // Step 3 Endpoints
@@ -388,6 +405,14 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
   };
 
   const invalidateAuth = () => {
+    clearValidationTimeouts();
+    setInlineAuthStatus((prev) => ({
+      ...prev,
+      state: 'idle',
+      stepIndex: 0,
+      errorMessage: undefined,
+      errorDetails: undefined
+    }));
     if (authStatus.isConfigured || authStatus.denied || authStatus.errorMessage) {
       setAuthStatus({
         isConfigured: false,
@@ -397,6 +422,152 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
         wasModifiedAfterAuth: true
       });
     }
+  };
+
+  const runInlineValidation = () => {
+    if (!isConfigValid()) return;
+    clearValidationTimeouts();
+
+    let methodSteps: string[] = [];
+    let isFail = inlineAuthStatus.simulateFailure;
+    let failTitle = '';
+    let failMsg = '';
+    let identityDesc = '';
+
+    if (authMethod === 'apikey') {
+      methodSteps = [
+        `Verifying API key syntax & header specification (${apiKeyHeader || 'X-API-Key'})`,
+        `Connecting to directory endpoint (${baseUrl || 'https://api.youridp.com/v2'}) over TLS 1.3`,
+        'Authenticating request and testing directory read permissions'
+      ];
+      if (
+        apiKeyVal.toLowerCase().includes('fail') ||
+        apiKeyVal.toLowerCase().includes('invalid') ||
+        apiKeyVal.toLowerCase().includes('error') ||
+        apiKeyVal.trim().length < 6
+      ) {
+        isFail = true;
+      }
+      failTitle = 'Authentication Failed: 401 Unauthorized';
+      failMsg = `The provided API Key was rejected by ${baseUrl || 'the directory endpoint'}. Ensure the key has directory read privileges and the header name matches your source IdP specification.`;
+      identityDesc = `API Key (${apiKeyHeader || 'X-API-Key'})`;
+    } else if (authMethod === 'bearer') {
+      methodSteps = [
+        'Inspecting Bearer token structure and Authorization header format',
+        `Establishing secure TLS 1.3 session with ${baseUrl || 'directory host'}`,
+        'Validating token signature, expiration, and directory access claims'
+      ];
+      if (
+        bearerToken.toLowerCase().includes('fail') ||
+        bearerToken.toLowerCase().includes('invalid') ||
+        bearerToken.toLowerCase().includes('expired') ||
+        bearerToken.toLowerCase().includes('error') ||
+        bearerToken.trim().length < 8
+      ) {
+        isFail = true;
+      }
+      failTitle = 'Token Validation Failed: 401 Unauthorized';
+      failMsg = 'The provided Bearer token is expired, revoked, or has insufficient scopes. Check your Personal Access Token (PAT) settings in your identity provider.';
+      identityDesc = 'Bearer Token (PAT)';
+    } else if (authMethod === 'basic') {
+      methodSteps = [
+        'Encoding credentials into HTTP Basic Authorization header',
+        `Establishing secure HTTPS connection with ${baseUrl || 'directory endpoint'}`,
+        `Authenticating user "${basicUser}" and verifying directory tree access`
+      ];
+      if (
+        basicUser.toLowerCase().includes('fail') ||
+        basicPass.toLowerCase().includes('fail') ||
+        basicPass.toLowerCase().includes('invalid') ||
+        basicPass.toLowerCase().includes('wrong') ||
+        basicPass.toLowerCase().includes('error') ||
+        basicPass.trim().length < 3
+      ) {
+        isFail = true;
+      }
+      failTitle = 'Authentication Failed: 401 Invalid Credentials';
+      failMsg = `Authentication failed for user "${basicUser}". Please ensure the credentials are correct and the account has privileges to query organizational objects.`;
+      identityDesc = `Basic Auth (${basicUser})`;
+    } else if (authMethod === 'customheader') {
+      const activeCount = customHeaders.filter((h) => h.name.trim() && h.value.trim()).length;
+      methodSteps = [
+        `Validating ${activeCount} custom header keys and RFC 7230 formatting`,
+        `Transmitting gateway probe with specified custom headers to ${baseUrl || 'gateway'}`,
+        'Verifying gateway routing and directory API handshake'
+      ];
+      if (
+        customHeaders.some(
+          (h) =>
+            h.name.toLowerCase().includes('fail') ||
+            h.value.toLowerCase().includes('fail') ||
+            h.name.toLowerCase().includes('invalid') ||
+            h.value.toLowerCase().includes('invalid')
+        )
+      ) {
+        isFail = true;
+      }
+      failTitle = 'Header Validation Failed: 400 Bad Request';
+      failMsg = 'Gateway rejected custom headers. Check header names, authentication values, and firewall allowlist settings.';
+      identityDesc = `Custom Headers (${activeCount} configured)`;
+    }
+
+    setInlineAuthStatus((prev) => ({
+      ...prev,
+      state: 'validating',
+      stepIndex: 0,
+      steps: methodSteps,
+      errorMessage: undefined,
+      errorDetails: undefined
+    }));
+    setAuthStatus((prev) => ({ ...prev, isConfigured: false }));
+
+    const t1 = setTimeout(() => {
+      setInlineAuthStatus((prev) => ({ ...prev, stepIndex: 1 }));
+    }, 450);
+
+    const t2 = setTimeout(() => {
+      setInlineAuthStatus((prev) => ({ ...prev, stepIndex: 2 }));
+    }, 950);
+
+    const t3 = setTimeout(() => {
+      if (isFail) {
+        setInlineAuthStatus((prev) => ({
+          ...prev,
+          state: 'failure',
+          stepIndex: 2,
+          errorMessage: failTitle,
+          errorDetails: failMsg
+        }));
+        setAuthStatus({
+          isConfigured: false,
+          method: authMethod,
+          denied: false,
+          errorMessage: failTitle,
+          wasModifiedAfterAuth: false
+        });
+        showToast?.(failTitle);
+      } else {
+        setInlineAuthStatus((prev) => ({
+          ...prev,
+          state: 'success',
+          stepIndex: methodSteps.length,
+          errorMessage: undefined,
+          errorDetails: undefined
+        }));
+        setAuthStatus({
+          isConfigured: true,
+          method: authMethod,
+          identity: identityDesc,
+          lastConfiguredAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          denied: false,
+          errorMessage: null,
+          wasModifiedAfterAuth: false
+        });
+        showToast?.('Configuration Successful');
+      }
+    }, 1500);
+
+    validationTimeouts.current = [t1, t2, t3];
   };
 
   const handleConfigure = () => {
@@ -414,39 +585,8 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
         isRedirecting: false
       });
     } else {
-      setNonOauthModal({
-        isOpen: true,
-        step: 0,
-        complete: false
-      });
-
-      // Animate through provider-specific validation probes
-      setTimeout(() => setNonOauthModal((prev) => ({ ...prev, step: 1 })), 350);
-      setTimeout(() => setNonOauthModal((prev) => ({ ...prev, step: 2 })), 800);
-      setTimeout(() => setNonOauthModal((prev) => ({ ...prev, step: 3 })), 1300);
-      setTimeout(() => setNonOauthModal((prev) => ({ ...prev, step: 4, complete: true })), 1800);
+      runInlineValidation();
     }
-  };
-
-  const handleCompleteNonOauth = () => {
-    setNonOauthModal({ isOpen: false, step: 0, complete: false });
-    const methodDesc: Record<AuthMethodType, string> = {
-      apikey: 'API Key (X-API-Key)',
-      bearer: 'Bearer Token (PAT)',
-      basic: `Basic Auth (${basicUser})`,
-      oauth2: 'OAuth 2.0',
-      customheader: 'Custom Gateway Headers'
-    };
-    setAuthStatus({
-      isConfigured: true,
-      method: authMethod,
-      identity: methodDesc[authMethod],
-      lastConfiguredAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      denied: false,
-      errorMessage: null,
-      wasModifiedAfterAuth: false
-    });
-    showToast?.(`${authLabels[authMethod]} configured & validated successfully`);
   };
 
   const handleCancelSimulatedIdp = () => {
@@ -1050,8 +1190,12 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                     <label>Header name</label>
                     <input
                       className="input mono"
-                      defaultValue="X-API-Key"
-                      onChange={() => invalidateAuth()}
+                      value={apiKeyHeader}
+                      placeholder="X-API-Key"
+                      onChange={(e) => {
+                        setApiKeyHeader(e.target.value);
+                        invalidateAuth();
+                      }}
                     />
                   </div>
                   <div className="field">
@@ -1059,7 +1203,11 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                     <input
                       className="input mono"
                       placeholder="e.g. Token "
-                      onChange={() => invalidateAuth()}
+                      value={apiKeyPrefix}
+                      onChange={(e) => {
+                        setApiKeyPrefix(e.target.value);
+                        invalidateAuth();
+                      }}
                     />
                   </div>
                 </div>
@@ -1068,7 +1216,7 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                   <input
                     className="input mono"
                     type="password"
-                    placeholder="Paste API key"
+                    placeholder="Paste API key (e.g. jc_live_9a87f1c4e2b0...)"
                     value={apiKeyVal}
                     onChange={(e) => {
                       setApiKeyVal(e.target.value);
@@ -1096,7 +1244,7 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                   <input
                     className="input mono"
                     type="password"
-                    placeholder="Paste bearer token"
+                    placeholder="Paste bearer token (e.g. eyJhbGciOiJIUzI1NiIs...)"
                     value={bearerToken}
                     onChange={(e) => {
                       setBearerToken(e.target.value);
@@ -1109,7 +1257,11 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                   <input
                     className="input mono"
                     placeholder="Authorization: Bearer {token}"
-                    onChange={() => invalidateAuth()}
+                    value={bearerHeaderOverride}
+                    onChange={(e) => {
+                      setBearerHeaderOverride(e.target.value);
+                      invalidateAuth();
+                    }}
                   />
                 </div>
               </div>
@@ -1132,6 +1284,7 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                     <label>Username</label>
                     <input
                       className="input"
+                      placeholder="e.g. hexnode-sync"
                       value={basicUser}
                       onChange={(e) => {
                         setBasicUser(e.target.value);
@@ -1153,7 +1306,7 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                     />
                   </div>
                 </div>
-                <p className="hint">Will be Base64-encoded automatically.</p>
+                <p className="hint">Will be Base64-encoded automatically into HTTP Basic authorization header.</p>
               </div>
             )}
 
@@ -1263,39 +1416,59 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
                   </ol>
                 </div>
                 {customHeaders.map((h, i) => (
-                  <div className="field-row" style={{ marginBottom: '8px' }} key={i}>
-                    <input
-                      className="input mono"
-                      placeholder="Header name"
-                      value={h.name}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setCustomHeaders((prev) =>
-                          prev.map((item, idx) => (idx === i ? { ...item, name: val } : item))
-                        );
-                        invalidateAuth();
-                      }}
-                    />
-                    <input
-                      className="input mono"
-                      placeholder="Header value"
-                      value={h.value}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setCustomHeaders((prev) =>
-                          prev.map((item, idx) => (idx === i ? { ...item, value: val } : item))
-                        );
-                        invalidateAuth();
-                      }}
-                    />
+                  <div className="field-row" style={{ marginBottom: '8px', alignItems: 'center' }} key={i}>
+                    <div className="field" style={{ flex: 1, margin: 0 }}>
+                      <input
+                        className="input mono"
+                        placeholder="Header name (e.g. X-Tenant-ID)"
+                        value={h.name}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCustomHeaders((prev) =>
+                            prev.map((item, idx) => (idx === i ? { ...item, name: val } : item))
+                          );
+                          invalidateAuth();
+                        }}
+                      />
+                    </div>
+                    <div className="field" style={{ flex: 1, margin: 0 }}>
+                      <input
+                        className="input mono"
+                        placeholder="Header value (e.g. tnt_88194a2f)"
+                        value={h.value}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCustomHeaders((prev) =>
+                            prev.map((item, idx) => (idx === i ? { ...item, value: val } : item))
+                          );
+                          invalidateAuth();
+                        }}
+                      />
+                    </div>
+                    {customHeaders.length > 1 && (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => {
+                          setCustomHeaders((prev) => prev.filter((_, idx) => idx !== i));
+                          invalidateAuth();
+                        }}
+                        title="Remove header"
+                        style={{ padding: '8px' }}
+                      >
+                        <TrashIcon size={15} />
+                      </button>
+                    )}
                   </div>
                 ))}
                 <button
+                  type="button"
                   className="btn btn-outline btn-sm"
                   onClick={() => {
                     setCustomHeaders((prev) => [...prev, { name: '', value: '' }]);
                     invalidateAuth();
                   }}
+                  style={{ marginTop: '4px' }}
                 >
                   + Add header
                 </button>
@@ -1306,17 +1479,89 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
               Integrations that require multiple rotating headers or an interactive OAuth (PKCE) flow aren't currently supported automatically.
             </p>
 
-            {/* Primary Action Button */}
+            {/* Primary Action Button & Simulation Controls */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '16px', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!isConfigValid()}
+                disabled={!isConfigValid() || inlineAuthStatus.state === 'validating'}
                 onClick={handleConfigure}
                 style={{ minWidth: '140px' }}
               >
-                <PlugIcon size={16} /> Configure
+                {inlineAuthStatus.state === 'validating' ? (
+                  <>
+                    <span
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        border: '2px solid rgba(255,255,255,0.4)',
+                        borderTopColor: '#FFFFFF',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite',
+                        display: 'inline-block',
+                        marginRight: '6px'
+                      }}
+                    />
+                    Verifying…
+                  </>
+                ) : inlineAuthStatus.state === 'success' && authMethod !== 'oauth2' ? (
+                  <>
+                    <CheckIcon size={16} /> Reconfigure
+                  </>
+                ) : (
+                  <>
+                    <PlugIcon size={16} /> Configure
+                  </>
+                )}
               </button>
+
+              {/* Simulation helper for non-OAuth methods */}
+              {authMethod !== 'oauth2' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#6B7280' }}>
+                  <span>Simulate outcome:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInlineAuthStatus((prev) => ({ ...prev, simulateFailure: false }));
+                    }}
+                    style={{
+                      padding: '3px 9px',
+                      borderRadius: '4px',
+                      fontSize: '11.5px',
+                      border: '1px solid',
+                      cursor: 'pointer',
+                      background: !inlineAuthStatus.simulateFailure ? '#DCFCE7' : '#F9FAFB',
+                      borderColor: !inlineAuthStatus.simulateFailure ? '#86EFAC' : '#E5E7EB',
+                      color: !inlineAuthStatus.simulateFailure ? '#15803D' : '#6B7280',
+                      fontWeight: !inlineAuthStatus.simulateFailure ? 600 : 400
+                    }}
+                    title="Simulate successful configuration verification"
+                  >
+                    ✓ Success
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInlineAuthStatus((prev) => ({ ...prev, simulateFailure: true }));
+                    }}
+                    style={{
+                      padding: '3px 9px',
+                      borderRadius: '4px',
+                      fontSize: '11.5px',
+                      border: '1px solid',
+                      cursor: 'pointer',
+                      background: inlineAuthStatus.simulateFailure ? '#FEE2E2' : '#F9FAFB',
+                      borderColor: inlineAuthStatus.simulateFailure ? '#FCA5A5' : '#E5E7EB',
+                      color: inlineAuthStatus.simulateFailure ? '#B91C1C' : '#6B7280',
+                      fontWeight: inlineAuthStatus.simulateFailure ? 600 : 400
+                    }}
+                    title="Simulate validation failure to test error & retry handling"
+                  >
+                    ✗ Failure
+                  </button>
+                </div>
+              )}
+
               {!isConfigValid() && (
                 <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                   Complete all required fields above to enable configuration
@@ -1324,8 +1569,232 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
               )}
             </div>
 
-            {/* Authorization Denied Alert */}
-            {authStatus.denied && (
+            {/* INLINE VERIFICATION / LOADING STATE */}
+            {authMethod !== 'oauth2' && inlineAuthStatus.state === 'validating' && (
+              <div
+                style={{
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  padding: '16px 18px',
+                  marginTop: '16px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                  <div
+                    style={{
+                      width: '18px',
+                      height: '18px',
+                      border: '2px solid #BFDBFE',
+                      borderTopColor: '#1D4ED8',
+                      borderRadius: '50%',
+                      animation: 'spin 0.8s linear infinite'
+                    }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '13.5px', color: '#1E293B' }}>
+                      Verifying {authLabels[authMethod]} credentials…
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748B' }}>
+                      Probing directory endpoint at <code>{baseUrl || 'https://api.youridp.com/v2'}</code>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingLeft: '28px' }}>
+                  {inlineAuthStatus.steps.map((s, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '12.5px',
+                        color: idx <= inlineAuthStatus.stepIndex ? '#1E293B' : '#94A3B8'
+                      }}
+                    >
+                      {idx < inlineAuthStatus.stepIndex ? (
+                        <span style={{ color: '#16A34A', display: 'flex', alignItems: 'center' }}>
+                          <CheckIcon size={14} />
+                        </span>
+                      ) : idx === inlineAuthStatus.stepIndex ? (
+                        <span
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: '#2563EB',
+                            display: 'inline-block',
+                            animation: 'pulse 1s infinite'
+                          }}
+                        />
+                      ) : (
+                        <span
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: '#CBD5E1',
+                            display: 'inline-block'
+                          }}
+                        />
+                      )}
+                      <span>{s}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* INLINE FAILURE STATE */}
+            {authMethod !== 'oauth2' && inlineAuthStatus.state === 'failure' && (
+              <div
+                style={{
+                  background: '#FEF2F2',
+                  border: '1px solid #FECACA',
+                  borderRadius: '8px',
+                  padding: '16px 18px',
+                  marginTop: '16px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <div style={{ color: '#DC2626', marginTop: '2px' }}>
+                    <AlertIcon size={20} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <h4 style={{ fontSize: '14.5px', fontWeight: 600, color: '#991B1B', margin: '0 0 4px 0' }}>
+                      {inlineAuthStatus.errorMessage || 'Authentication Failed'}
+                    </h4>
+                    <p style={{ fontSize: '13px', color: '#B91C1C', margin: '0 0 14px 0', lineHeight: 1.5 }}>
+                      {inlineAuthStatus.errorDetails ||
+                        'The credentials entered could not be verified by the identity provider endpoint. Please inspect the parameters and retry.'}
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={runInlineValidation}
+                        style={{ background: '#DC2626', borderColor: '#DC2626', gap: '6px' }}
+                      >
+                        <RefreshIcon size={13} /> Retry Verification
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline"
+                        onClick={() => {
+                          setInlineAuthStatus((prev) => ({
+                            ...prev,
+                            state: 'idle',
+                            errorMessage: undefined,
+                            errorDetails: undefined
+                          }));
+                        }}
+                        style={{ background: '#FFFFFF', borderColor: '#FCA5A5', color: '#991B1B' }}
+                      >
+                        Edit Credentials
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* INLINE SUCCESS STATE ("Configuration Successful") */}
+            {authMethod !== 'oauth2' && inlineAuthStatus.state === 'success' && (
+              <div
+                style={{
+                  background: '#F0FDF4',
+                  border: '1px solid #BBF7D0',
+                  borderRadius: '8px',
+                  padding: '16px 18px',
+                  marginTop: '16px'
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                    marginBottom: '14px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span
+                      style={{
+                        width: '30px',
+                        height: '30px',
+                        borderRadius: '50%',
+                        background: '#16A34A',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <CheckIcon size={18} />
+                    </span>
+                    <div>
+                      <h4 style={{ fontSize: '15.5px', fontWeight: 700, color: '#15803D', margin: 0 }}>
+                        Configuration Successful
+                      </h4>
+                      <p style={{ fontSize: '12.5px', color: '#166534', margin: '2px 0 0 0' }}>
+                        {authLabels[authMethod]} verified &amp; authorized for {idpName || integrationName || 'Custom Directory'}.
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={runInlineValidation}
+                      style={{ background: '#FFFFFF', borderColor: '#86EFAC', color: '#15803D', fontSize: '12px', gap: '5px' }}
+                    >
+                      <RefreshIcon size={12} /> Re-test
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: '12px',
+                    borderTop: '1px solid #DCFCE7',
+                    paddingTop: '12px',
+                    fontSize: '12.5px'
+                  }}
+                >
+                  <div>
+                    <span style={{ color: '#166534', fontWeight: 600, display: 'block', fontSize: '11px', textTransform: 'uppercase' }}>
+                      Connection Status
+                    </span>
+                    <span style={{ color: '#14532D', fontWeight: 500 }}>
+                      HTTP 200 OK (Handshake active)
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#166534', fontWeight: 600, display: 'block', fontSize: '11px', textTransform: 'uppercase' }}>
+                      Encryption / Protocol
+                    </span>
+                    <span style={{ color: '#14532D', fontWeight: 500 }}>
+                      TLS 1.3 Verified Session
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#166534', fontWeight: 600, display: 'block', fontSize: '11px', textTransform: 'uppercase' }}>
+                      Directory Read Scope
+                    </span>
+                    <span style={{ color: '#14532D', fontWeight: 500 }}>
+                      Users, Groups, Directory Objects
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Authorization Denied Alert (for OAuth 2.0) */}
+            {authMethod === 'oauth2' && authStatus.denied && (
               <div
                 className="alert-banner alert-banner-warning"
                 style={{ marginTop: '16px', background: '#FEF2F2', borderColor: '#FECACA' }}
@@ -1344,7 +1813,7 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
             )}
 
             {/* Modified After Authentication Alert */}
-            {authStatus.wasModifiedAfterAuth && !authStatus.isConfigured && !authStatus.denied && (
+            {authStatus.wasModifiedAfterAuth && !authStatus.isConfigured && !authStatus.denied && inlineAuthStatus.state === 'idle' && (
               <div className="alert-banner alert-banner-warning" style={{ marginTop: '16px' }}>
                 <div className="alert-banner-icon">
                   <AlertIcon size={18} />
@@ -1358,8 +1827,8 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
               </div>
             )}
 
-            {/* Configured & Authorized Status Card */}
-            {authStatus.isConfigured && (
+            {/* Configured & Authorized Status Card (for OAuth 2.0 flow) */}
+            {authMethod === 'oauth2' && authStatus.isConfigured && (
               <div className="auth-configured-card">
                 <div
                   style={{
@@ -3066,104 +3535,6 @@ export const Wizard1: React.FC<Wizard1Props> = ({ onCancel, onFinish, showToast 
         </div>
       )}
 
-      {/* NON-OAUTH CREDENTIAL VALIDATION MODAL */}
-      {nonOauthModal.isOpen && (
-        <div className="modal-overlay open" style={{ zIndex: 120 }}>
-          <div className="modal-box" style={{ maxWidth: '520px', width: '100%' }}>
-            <div className="modal-header">
-              <h2>Configuring &amp; Validating {authLabels[authMethod]}</h2>
-              <button
-                type="button"
-                className="modal-close"
-                onClick={() => setNonOauthModal({ isOpen: false, step: 0, complete: false })}
-              >
-                <CloseIcon size={18} />
-              </button>
-            </div>
-
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '18px' }}>
-              Probing directory endpoint and verifying credential parameters for <strong>{baseUrl || 'https://api.youridp.com/v2'}</strong>.
-            </p>
-
-            <div style={{ background: '#F8FAFC', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px', marginBottom: '20px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }}>
-                  <span>1. Validating credential syntax &amp; formatting</span>
-                  {nonOauthModal.step >= 1 ? (
-                    <span style={{ color: '#15803D', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <CheckIcon size={14} /> Complete
-                    </span>
-                  ) : (
-                    <span style={{ color: 'var(--text-secondary)' }}>Validating…</span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }}>
-                  <span>2. Testing TLS 1.3 handshake with endpoint</span>
-                  {nonOauthModal.step >= 2 ? (
-                    <span style={{ color: '#15803D', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <CheckIcon size={14} /> TLS 1.3 OK
-                    </span>
-                  ) : nonOauthModal.step === 1 ? (
-                    <span style={{ color: 'var(--primary)' }}>Probing…</span>
-                  ) : (
-                    <span style={{ color: 'var(--muted-text)' }}>Pending</span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }}>
-                  <span>3. Probing authentication header response</span>
-                  {nonOauthModal.step >= 3 ? (
-                    <span style={{ color: '#15803D', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <CheckIcon size={14} /> HTTP 200 Handshake OK
-                    </span>
-                  ) : nonOauthModal.step === 2 ? (
-                    <span style={{ color: 'var(--primary)' }}>Verifying…</span>
-                  ) : (
-                    <span style={{ color: 'var(--muted-text)' }}>Pending</span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }}>
-                  <span>4. Establishing secure session credential store</span>
-                  {nonOauthModal.step >= 4 ? (
-                    <span style={{ color: '#15803D', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <CheckIcon size={14} /> Secure Vault OK
-                    </span>
-                  ) : nonOauthModal.step === 3 ? (
-                    <span style={{ color: 'var(--primary)' }}>Storing…</span>
-                  ) : (
-                    <span style={{ color: 'var(--muted-text)' }}>Pending</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {nonOauthModal.complete && (
-              <div className="alert-banner alert-banner-info" style={{ marginBottom: '20px' }}>
-                <div className="alert-banner-icon"><InfoCircleIcon size={18} /></div>
-                <div>
-                  <strong>Credentials validated</strong>
-                  <p>
-                    Handshake succeeded. Directory access readiness will be verified against Users, Groups, and OU endpoints in Step 3.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!nonOauthModal.complete}
-                onClick={handleCompleteNonOauth}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 };

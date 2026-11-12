@@ -699,8 +699,6 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
         eligibleAssets.forEach((a, idx) => {
           const isManual =
             category === 'apps' && (a.name === 'Salesforce' || a.name === 'Workday');
-          const isPolicyManual =
-            category === 'policies' && a.name.includes('Contractor');
 
           assetResults[a.id] = {
             status: 'completed',
@@ -709,12 +707,10 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
           };
 
           verificationResults[a.id] = {
-            verified: !isManual && !isPolicyManual,
-            status: isManual || isPolicyManual ? 'Manual Action Required' : 'Verified',
+            verified: !isManual,
+            status: isManual ? 'Manual Action Required' : 'Verified',
             notes: isManual
               ? 'Hexnode IdP entity registered. Upload signing certificate and SSO URL to Service Provider portal.'
-              : isPolicyManual
-              ? 'Policy rule configured. Confirm operating business hours under Settings > Time Zones.'
               : 'Target configuration matches approved migration plan and passes verification checks.',
             manualAction: isManual
               ? 'Download X.509 Certificate and copy SSO Endpoint to Salesforce / Workday Admin Console'
@@ -1452,12 +1448,16 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
               <h1 style={{ fontSize: '20px', fontWeight: 600, color: '#111827', margin: 0 }}>
                 {categoryMeta.title} Migration
               </h1>
-              <span className="pill pill-info" style={{ fontSize: '11px', fontFamily: 'var(--mono)' }}>
-                {categoryMeta.endpoint}
-              </span>
-              <span className="pill pill-muted" style={{ fontSize: '11px' }}>
-                Source: Meridian ID
-              </span>
+              {category === 'apps' && (
+                <>
+                  <span className="pill pill-info" style={{ fontSize: '11px', fontFamily: 'var(--mono)' }}>
+                    {categoryMeta.endpoint}
+                  </span>
+                  <span className="pill pill-muted" style={{ fontSize: '11px' }}>
+                    Source: Meridian ID
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1593,12 +1593,16 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                 <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#111827', margin: 0 }}>
                   Discovered Inventory
                 </h2>
-                <span className="pill pill-info" style={{ fontSize: '12px' }}>
-                  {state.discoveredAssets.length} Discovered
-                </span>
-                <span className="pill pill-success" style={{ fontSize: '12px' }}>
-                  {selectedCount} Selected
-                </span>
+                {category === 'apps' && (
+                  <>
+                    <span className="pill pill-info" style={{ fontSize: '12px' }}>
+                      {state.discoveredAssets.length} Discovered
+                    </span>
+                    <span className="pill pill-success" style={{ fontSize: '12px' }}>
+                      {selectedCount} Selected
+                    </span>
+                  </>
+                )}
               </div>
 
               {/* Action Controls: Rescan Inventory */}
@@ -1958,22 +1962,25 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                       <h3 style={{ fontSize: '17px', fontWeight: 600, color: '#111827', margin: 0 }}>
                         {activeAsset.name}
                       </h3>
-                      <span className="pill pill-info">{activeAsset.type}</span>
-
-                      {activeAsset.name === 'Workday' && (
-                        <span className="pill pill-warning" style={{ fontSize: '11px' }}>
-                          Slug Alias Auto-Generated
-                        </span>
-                      )}
-                      {activeAsset.name.includes('Contractor') && (
-                        <span className="pill pill-warning" style={{ fontSize: '11px' }}>
-                          Schedule Translation Applied
-                        </span>
-                      )}
-                      {activeAsset.name.includes('Billing') && (
-                        <span className="pill pill-warning" style={{ fontSize: '11px' }}>
-                          Scoped Privileges
-                        </span>
+                      {category === 'apps' && (
+                        <>
+                          <span className="pill pill-info">{activeAsset.type}</span>
+                          {activeAsset.name === 'Workday' && (
+                            <span className="pill pill-warning" style={{ fontSize: '11px' }}>
+                              Slug Alias Auto-Generated
+                            </span>
+                          )}
+                          {activeAsset.name.includes('Contractor') && (
+                            <span className="pill pill-warning" style={{ fontSize: '11px' }}>
+                              Schedule Translation Applied
+                            </span>
+                          )}
+                          {activeAsset.name.includes('Billing') && (
+                            <span className="pill pill-warning" style={{ fontSize: '11px' }}>
+                              Scoped Privileges
+                            </span>
+                          )}
+                        </>
                       )}
 
                       {hasUnsavedChanges && (
@@ -4895,12 +4902,16 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                 <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#111827', margin: 0 }}>
                   Pre-Flight Migration Plan &amp; Validation
                 </h2>
-                <span className="pill pill-success" style={{ fontSize: '12px' }}>
-                  Ready for Execution
-                </span>
-                <span className="pill pill-info" style={{ fontSize: '12px' }}>
-                  Target: corp.hexnode.com
-                </span>
+                {category === 'apps' && (
+                  <>
+                    <span className="pill pill-success" style={{ fontSize: '12px' }}>
+                      Ready for Execution
+                    </span>
+                    <span className="pill pill-info" style={{ fontSize: '12px' }}>
+                      Target: corp.hexnode.com
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -5125,20 +5136,6 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                 <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#111827', margin: 0 }}>
                   {state.migrationJob?.finished ? 'Migration & Verification Results' : `Migrating ${categoryMeta.title}`}
                 </h2>
-                <span
-                  className={`pill ${
-                    state.migrationJob?.finished
-                      ? Object.values(state.verificationResults).some((v: any) => v.status === 'Manual Action Required')
-                        ? 'pill-warning'
-                        : 'pill-success'
-                      : 'pill-info'
-                  }`}
-                  style={{ fontSize: '12px' }}
-                >
-                  {state.migrationJob?.finished
-                    ? 'Execution Complete'
-                    : 'Batch Execution in Progress'}
-                </span>
               </div>
             </div>
 
@@ -5196,7 +5193,7 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
             {state.migrationJob?.finished && (
               <div>
                 {/* Result Alert Banner */}
-                {Object.values(state.verificationResults).some((v: any) => v.status === 'Manual Action Required') ? (
+                {category === 'apps' && Object.values(state.verificationResults).some((v: any) => v.status === 'Manual Action Required') ? (
                   <div
                     style={{
                       background: '#FEF3C7',
@@ -5267,7 +5264,9 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                   <div className="card" style={{ padding: '12px', textAlign: 'center' }}>
                     <span style={{ fontSize: '11.5px', color: '#6B7280', display: 'block' }}>Manual Action Required</span>
                     <strong style={{ fontSize: '18px', color: '#B45309' }}>
-                      {Object.values(state.verificationResults).filter((v: any) => v.status === 'Manual Action Required').length}
+                      {category === 'apps'
+                        ? Object.values(state.verificationResults).filter((v: any) => v.status === 'Manual Action Required').length
+                        : 0}
                     </strong>
                   </div>
                   <div className="card" style={{ padding: '12px', textAlign: 'center' }}>
@@ -5280,79 +5279,186 @@ export const AssetMigrationWizard: React.FC<AssetMigrationWizardProps> = ({
                 <div style={{ marginBottom: '20px' }}>
                   <table className="data-table">
                     <thead>
-                      <tr>
-                        <th>Source Asset</th>
-                        <th>Target Hexnode ID</th>
-                        <th>Migration Result</th>
-                        <th>Verification Status</th>
-                        <th>Notes &amp; Administrative Actions</th>
-                      </tr>
+                      {category === 'apps' && (
+                        <tr>
+                          <th>Source Asset</th>
+                          <th>Hexnode Application</th>
+                          <th>Protocol</th>
+                          <th>Assigned Users</th>
+                          <th>Migration Status</th>
+                        </tr>
+                      )}
+                      {category === 'policies' && (
+                        <tr>
+                          <th>Source Policy</th>
+                          <th>Hexnode Policy</th>
+                          <th>hexnode Policy Type</th>
+                          <th>Assigned Users</th>
+                          <th>Migration Status</th>
+                        </tr>
+                      )}
+                      {category === 'roles' && (
+                        <tr>
+                          <th>Source Asset</th>
+                          <th>Hexnode Technician Profile</th>
+                          <th>Assigned Permissions</th>
+                          <th>Scope</th>
+                          <th>Assigned Users</th>
+                          <th>Migration Status</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody>
-                      {state.discoveredAssets
-                        .filter((a) => state.selectedAssetIds.includes(a.id))
-                        .map((asset, i) => {
-                          const ver = state.verificationResults[asset.id] || {
-                            verified: true,
-                            status: 'Verified',
-                            notes: 'Configuration matched and registered in tenant.'
-                          };
-                          return (
-                            <tr key={asset.id}>
-                              <td>
-                                <strong style={{ color: '#111827' }}>{asset.name}</strong>
-                                <div style={{ fontSize: '11px', color: '#6B7280' }}>{asset.type}</div>
-                              </td>
-                              <td style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: '#374151' }}>
-                                {`hx_${category}_${100 + i}`}
-                              </td>
-                              <td>
-                                <span className="pill pill-success">Migrated</span>
-                              </td>
-                              <td>
-                                <span
-                                  className={`pill ${
-                                    ver.status === 'Verified' ? 'pill-success' : 'pill-warning'
-                                  }`}
-                                >
-                                  {ver.status === 'Verified' ? (
-                                    <>
-                                      <CheckIcon size={11} /> Verified
-                                    </>
-                                  ) : (
-                                    ver.status
-                                  )}
-                                </span>
-                              </td>
-                              <td style={{ fontSize: '12px', color: ver.status === 'Verified' ? '#4B5563' : '#B45309' }}>
-                                <div>{ver.notes}</div>
-                                {ver.manualAction && (
-                                  <div style={{ marginTop: '4px', display: 'flex', gap: '6px' }}>
-                                    <button
-                                      type="button"
-                                      className="btn btn-outline btn-sm"
-                                      style={{ fontSize: '11px', padding: '2px 8px' }}
-                                      onClick={() => showToast(`Downloaded certificate for ${asset.name}`)}
-                                    >
-                                      Download Cert &amp; Metadata
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn btn-outline btn-sm"
-                                      style={{ fontSize: '11px', padding: '2px 8px' }}
-                                      onClick={() => {
-                                        navigator.clipboard?.writeText?.(`https://idp.hexnode.com/saml/${asset.name.toLowerCase()}/sso`);
-                                        showToast(`Copied SSO URL for ${asset.name}`);
-                                      }}
-                                    >
-                                      Copy SSO URL
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
+                      {category === 'apps' &&
+                        state.discoveredAssets
+                          .filter((a) => state.selectedAssetIds.includes(a.id))
+                          .map((asset) => {
+                            const mapping = state.mappings[asset.id] || {};
+                            const hexnodeApp = mapping.targetName || asset.name;
+                            const protocol = mapping.protocol || asset.protocol || (asset.type?.includes('OIDC') ? 'OIDC' : 'SAML 2.0');
+                            const assignedUsers = asset.usersCount || (mapping.sourceAssignments?.users?.length ? mapping.sourceAssignments.users.length * 28 : 142);
+                            const status = state.migrationJob?.finished
+                              ? 'Migrated'
+                              : isMigrating || state.migrationJob?.running
+                              ? 'In progress'
+                              : 'Pending';
+
+                            return (
+                              <tr key={asset.id}>
+                                <td>
+                                  <strong style={{ color: '#111827' }}>{asset.name}</strong>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 600, color: '#1D4ED8' }}>{hexnodeApp}</span>
+                                </td>
+                                <td>
+                                  <span className="pill pill-muted" style={{ fontFamily: 'var(--mono)', fontSize: '11.5px' }}>
+                                    {protocol}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 600, color: '#111827' }}>{assignedUsers}</span> users
+                                </td>
+                                <td>
+                                  <span className={`pill ${status === 'Migrated' ? 'pill-success' : status === 'In progress' ? 'pill-info' : 'pill-muted'}`}>
+                                    {status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+
+                      {category === 'policies' &&
+                        state.discoveredAssets
+                          .filter((a) => state.selectedAssetIds.includes(a.id))
+                          .map((asset) => {
+                            const mapping = state.mappings[asset.id] || {};
+                            const hexnodePolicy = mapping.targetName || asset.name;
+                            const policyType =
+                              mapping.policyType ||
+                              (mapping.isConditionalAccess || asset.type === 'Conditional Access' || asset.name.includes('Access') || asset.name.includes('Contractor')
+                                ? 'Conditional Access'
+                                : asset.type?.includes('MFA') || asset.name.includes('MFA')
+                                ? 'MFA'
+                                : asset.type?.includes('Session') || asset.name.includes('Session')
+                                ? 'Session'
+                                : 'Password');
+                            const assignedUsers =
+                              asset.name.includes('Executive') ? 12 :
+                              asset.name.includes('Contractor') ? 16 :
+                              asset.name.includes('Legacy') || asset.name.includes('APAC') ? 64 : 420;
+                            const status = state.migrationJob?.finished
+                              ? 'Migrated'
+                              : isMigrating || state.migrationJob?.running
+                              ? 'In progress'
+                              : 'Pending';
+
+                            return (
+                              <tr key={asset.id}>
+                                <td>
+                                  <strong style={{ color: '#111827' }}>{asset.name}</strong>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 600, color: '#1D4ED8' }}>{hexnodePolicy}</span>
+                                </td>
+                                <td>
+                                  <span className="pill pill-muted" style={{ fontSize: '12px' }}>
+                                    {policyType}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 600, color: '#111827' }}>{assignedUsers}</span> users
+                                </td>
+                                <td>
+                                  <span className={`pill ${status === 'Migrated' ? 'pill-success' : status === 'In progress' ? 'pill-info' : 'pill-muted'}`}>
+                                    {status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+
+                      {category === 'roles' &&
+                        state.discoveredAssets
+                          .filter((a) => state.selectedAssetIds.includes(a.id))
+                          .map((asset) => {
+                            const mapping = state.mappings[asset.id] || {};
+                            const hexnodeProfile =
+                              mapping.technicianProfile ||
+                              mapping.assignedRole ||
+                              (asset.name.includes('Global') ? 'Super Admin Profile' : `${asset.name} Profile`);
+                            const permissionsSummary =
+                              asset.name.includes('Global') ? 'Full Tenant Control (18)' :
+                              asset.name.includes('Helpdesk') ? 'Users & Passwords (7)' :
+                              asset.name.includes('Device') ? 'MDM & Device Actions (8)' :
+                              asset.name.includes('Auditor') ? 'Audit & Reports View (4)' :
+                              asset.name.includes('App') ? 'App & SSO Access (6)' :
+                              asset.name.includes('Security') ? 'Security & MFA (12)' :
+                              asset.name.includes('Billing') ? 'Subscriptions & Licensing (3)' :
+                              'Technician Permissions (6)';
+                            const isGlobal =
+                              mapping.scopeType === 'global' ||
+                              asset.details?.scope === 'Full tenant' ||
+                              asset.name.includes('Global') ||
+                              asset.name.includes('Security') ||
+                              asset.name.includes('Billing') ||
+                              asset.name.includes('Auditor');
+                            const assignedUsers = asset.usersCount || mapping.assignedUsers || 1;
+                            const status = state.migrationJob?.finished
+                              ? 'Migrated'
+                              : isMigrating || state.migrationJob?.running
+                              ? 'In progress'
+                              : 'Pending';
+
+                            return (
+                              <tr key={asset.id}>
+                                <td>
+                                  <strong style={{ color: '#111827' }}>{asset.name}</strong>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 600, color: '#1D4ED8' }}>{hexnodeProfile}</span>
+                                </td>
+                                <td>
+                                  <span style={{ fontSize: '12.5px', color: '#374151' }}>
+                                    {permissionsSummary}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className={`pill ${isGlobal ? 'pill-info' : 'pill-muted'}`} style={{ fontSize: '11.5px' }}>
+                                    {isGlobal ? 'Global' : 'Local'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 600, color: '#111827' }}>{assignedUsers}</span> users
+                                </td>
+                                <td>
+                                  <span className={`pill ${status === 'Migrated' ? 'pill-success' : status === 'In progress' ? 'pill-info' : 'pill-muted'}`}>
+                                    {status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
                     </tbody>
                   </table>
                 </div>

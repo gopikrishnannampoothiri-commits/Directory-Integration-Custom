@@ -2,20 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   ChevronRightIcon,
   ChevronDownIcon,
-  CheckIcon,
   GridIcon,
   RefreshIcon,
   EditIcon,
   UsersIcon,
-  ShieldIcon,
-  FolderIcon
+  ShieldIcon
 } from './icons.tsx';
 import { DashboardState, CategoryMigrationState, AssetCategory, AssetPanelStatus } from '../types.ts';
 import {
   dashUsers,
-  dashGroups,
-  dashOU,
-  assetTables
+  dashGroups
 } from '../data/mockData.ts';
 
 interface DashboardProps {
@@ -36,32 +32,7 @@ function confidencePillClass(c: string) {
   return c === 'High' ? 'pill-success' : 'pill-warning';
 }
 
-function getStatusPill(status: AssetPanelStatus) {
-  switch (status) {
-    case 'not_discovered':
-      return <span className="pill pill-muted">Not discovered</span>;
-    case 'discovery_incomplete':
-      return <span className="pill pill-warning">Discovery incomplete</span>;
-    case 'needs_configuration':
-      return <span className="pill pill-warning">Needs configuration</span>;
-    case 'ready_to_migrate':
-      return <span className="pill pill-info">Ready to migrate</span>;
-    case 'in_progress':
-      return <span className="pill pill-info">Migration in progress</span>;
-    case 'partially_migrated':
-      return <span className="pill pill-warning">Partially migrated</span>;
-    case 'verification_required':
-      return <span className="pill pill-warning">Verification required</span>;
-    case 'verified':
-      return (
-        <span className="pill pill-success">
-          <CheckIcon size={12} /> Verified
-        </span>
-      );
-    default:
-      return <span className="pill pill-muted">Not discovered</span>;
-  }
-}
+
 
 function getPanelActionLabel(status: AssetPanelStatus): string {
   switch (status) {
@@ -96,15 +67,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenCategoryWizard
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'general' | 'users' | 'groups' | 'ou' | 'apps' | 'policies' | 'roles' | 'synchistory'
+    'general' | 'users' | 'groups' | 'synchistory'
   >('general');
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Sub-tabs for nested sidebar navigation in Users, Groups, and OU
+  // Sub-tabs for nested sidebar navigation in Users and Groups
   const [usersSubTab, setUsersSubTab] = useState<'managed' | 'attributes'>('managed');
   const [groupsSubTab, setGroupsSubTab] = useState<'managed' | 'attributes'>('managed');
-  const [ouSubTab, setOuSubTab] = useState<'managed' | 'attributes'>('managed');
 
   const dirName = directoryConfig?.integrationName || directoryConfig?.idpName || 'Meridian ID';
   const idpLabel = directoryConfig?.idpName || 'Meridian ID';
@@ -122,19 +92,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const isComplete = dashboardState === 'complete';
 
-  const hasApps = isComplete || categoryStates?.apps?.status === 'verified' || categoryStates?.apps?.status === 'verification_required';
-  const hasPolicies = isComplete || categoryStates?.policies?.status === 'verified' || categoryStates?.policies?.status === 'verification_required';
-  const hasRoles = isComplete || categoryStates?.roles?.status === 'verified' || categoryStates?.roles?.status === 'verification_required';
-
-  // 1. Conditional Tabs based on migration state (Strictly omitting Authentication Factors)
-  const visibleTabs: { id: 'general' | 'users' | 'groups' | 'ou' | 'apps' | 'policies' | 'roles' | 'synchistory'; label: string }[] = [
+  // 1. Dashboard navigation tabs
+  const visibleTabs: { id: 'general' | 'users' | 'groups' | 'synchistory'; label: string }[] = [
     { id: 'general', label: 'General' },
     { id: 'users', label: 'Users' },
     { id: 'groups', label: 'Groups' },
-    { id: 'ou', label: 'OU' },
-    ...(hasApps ? [{ id: 'apps' as const, label: 'Apps' }] : []),
-    ...(hasPolicies ? [{ id: 'policies' as const, label: 'Policies' }] : []),
-    ...(hasRoles ? [{ id: 'roles' as const, label: 'Roles' }] : []),
     { id: 'synchistory', label: 'Sync History' }
   ];
 
@@ -157,13 +119,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     { hexnode: 'Members', source: 'members.length' }
   ];
 
-  const ouAttributeMappings = [
-    { hexnode: 'OU Name', source: 'name' },
-    { hexnode: 'OU ID', source: 'id' },
-    { hexnode: 'Parent Path', source: 'parentPath' },
-    { hexnode: 'Description', source: 'description' },
-    { hexnode: 'Member Count', source: 'memberCount' }
-  ];
 
   const syncHistoryRows = [
     {
@@ -536,8 +491,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           }}
                         >
                           <div>
-                            {/* Card Top: Icon & Status */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                            {/* Card Top: Icon */}
+                            <div style={{ marginBottom: '14px' }}>
                               <div
                                 style={{
                                   width: '38px',
@@ -552,37 +507,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               >
                                 {p.icon}
                               </div>
-                              {getStatusPill(p.state.status)}
                             </div>
 
                             {/* Title & Description */}
                             <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#111827', margin: '0 0 6px 0' }}>
                               {p.title}
                             </h3>
-                            <p style={{ fontSize: '13px', color: '#4B5563', lineHeight: 1.45, margin: '0 0 16px 0' }}>
+                            <p style={{ fontSize: '13px', color: '#4B5563', lineHeight: 1.45, margin: '0 0 20px 0' }}>
                               {p.description}
                             </p>
-
-                            {/* Counts & Issue Summary */}
-                            <div
-                              style={{
-                                background: '#F9FAFB',
-                                border: '1px solid #F3F4F6',
-                                borderRadius: '6px',
-                                padding: '10px 12px',
-                                marginBottom: '18px',
-                                minHeight: '52px'
-                              }}
-                            >
-                              {p.countSummary && (
-                                <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#111827', marginBottom: '3px' }}>
-                                  {p.countSummary}
-                                </div>
-                              )}
-                              <div style={{ fontSize: '12px', color: '#6B7280' }}>
-                                {p.readinessSummary}
-                              </div>
-                            </div>
                           </div>
 
                           {/* Primary Action Button */}
@@ -893,302 +826,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         )}
 
-        {/* ========================================================
-            4. OU TAB (Nested Sidebar Layout)
-           ======================================================== */}
-        {activeTab === 'ou' && (
-          <div className="tab-panel active">
-            <div className="sidebar-config-container">
-              {/* Left Sidebar */}
-              <div className="sidebar-config-left">
-                <div className="config-nav-group">
-                  <div className="config-sub-menu">
-                    <button
-                      type="button"
-                      className={`config-menu-item ${ouSubTab === 'managed' ? 'active' : ''}`}
-                      onClick={() => setOuSubTab('managed')}
-                    >
-                      Managed OUs
-                    </button>
-                    <button
-                      type="button"
-                      className={`config-menu-item ${ouSubTab === 'attributes' ? 'active' : ''}`}
-                      onClick={() => setOuSubTab('attributes')}
-                    >
-                      OU Attributes
-                    </button>
-                  </div>
-                </div>
-              </div>
 
-              {/* Right Content */}
-              <div className="sidebar-config-right">
-                {ouSubTab === 'managed' ? (
-                  <div className="card" style={{ padding: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                      <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#111827', margin: 0 }}>
-                        Managed Organizational Units
-                      </h3>
-                      <span className="pill pill-info">{dashOU.length} OUs</span>
-                    </div>
-
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>OU</th>
-                          <th>Parent Path</th>
-                          <th>Members</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dashOU.map((o, i) => (
-                          <tr key={i}>
-                            <td style={{ fontWeight: 500, color: '#111827' }}>{o[0]}</td>
-                            <td style={{ fontFamily: 'var(--mono)', color: '#4B5563' }}>{o[1]}</td>
-                            <td>{o[2]}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="card" style={{ padding: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#111827', margin: 0 }}>
-                        OU Attributes
-                      </h3>
-                      <button
-                        type="button"
-                        className="btn btn-outline btn-sm"
-                        onClick={() => showToast('Opening OU attribute mapper…')}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <EditIcon size={13} /> Edit Mappings
-                      </button>
-                    </div>
-                    <p style={{ fontSize: '13px', color: '#6B7280', marginBottom: '16px' }}>
-                      Attribute schema mappings between Hexnode IdP and {idpLabel} organizational units.
-                    </p>
-
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Hexnode IDP Attribute</th>
-                          <th>Source Attribute</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ouAttributeMappings.map((m, i) => (
-                          <tr key={i}>
-                            <td style={{ fontWeight: 500, color: '#111827' }}>{m.hexnode}</td>
-                            <td style={{ fontFamily: 'var(--mono)', color: '#374151' }}>{m.source}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================
-            5. APPS TAB (Kept intact for complete migration)
-           ======================================================== */}
-        {activeTab === 'apps' && (
-          <div className="tab-panel active">
-            {!isComplete ? (
-              emptyStateHTML('SSO Applications')
-            ) : (
-              <>
-                <div className="table-toolbar">
-                  <button
-                    className="btn btn-sm btn-outline"
-                    onClick={() => showToast('Re-syncing all apps…')}
-                  >
-                    Re-sync category
-                  </button>
-                </div>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Application</th>
-                      <th>Protocol</th>
-                      <th>Category</th>
-                      <th>Assigned users</th>
-                      <th>Confidence</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assetTables.apps.map((app, i) => (
-                      <tr key={i}>
-                        <td>
-                          <button
-                            className="item-name-link"
-                            onClick={() => onShowItemDetail('apps', i)}
-                          >
-                            {app.name}
-                          </button>
-                        </td>
-                        <td>{app.protocol}</td>
-                        <td>{app.category}</td>
-                        <td>{app.users.toLocaleString()}</td>
-                        <td>
-                          <span className={`pill ${confidencePillClass(app.confidence)}`}>
-                            {app.confidence}
-                          </span>
-                        </td>
-                        <td>
-                          <button
-                            className="icon-btn"
-                            title="Re-sync"
-                            onClick={() => showToast(`Re-syncing ${app.name}…`)}
-                          >
-                            <RefreshIcon size={15} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ========================================================
-            6. POLICIES TAB (Kept intact for complete migration)
-           ======================================================== */}
-        {activeTab === 'policies' && (
-          <div className="tab-panel active">
-            {!isComplete ? (
-              emptyStateHTML('Security Policies')
-            ) : (
-              <>
-                <div className="table-toolbar">
-                  <button
-                    className="btn btn-sm btn-outline"
-                    onClick={() => showToast('Re-syncing all policies…')}
-                  >
-                    Re-sync category
-                  </button>
-                </div>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Policy</th>
-                      <th>Type</th>
-                      <th>Applies to</th>
-                      <th>Enforcement</th>
-                      <th>Confidence</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assetTables.policies.map((pol, i) => (
-                      <tr key={i}>
-                        <td>
-                          <button
-                            className="item-name-link"
-                            onClick={() => onShowItemDetail('policies', i)}
-                          >
-                            {pol.name}
-                          </button>
-                        </td>
-                        <td>{pol.type}</td>
-                        <td>{pol.appliesTo}</td>
-                        <td>{pol.enforcement}</td>
-                        <td>
-                          <span className={`pill ${confidencePillClass(pol.confidence)}`}>
-                            {pol.confidence}
-                          </span>
-                        </td>
-                        <td>
-                          <button
-                            className="icon-btn"
-                            title="Re-sync"
-                            onClick={() => showToast(`Re-syncing ${pol.name}…`)}
-                          >
-                            <RefreshIcon size={15} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
-          </div>
-        )}
-
-
-
-        {/* ========================================================
-            8. ROLES TAB (Kept intact for complete migration)
-           ======================================================== */}
-        {activeTab === 'roles' && (
-          <div className="tab-panel active">
-            {!isComplete ? (
-              emptyStateHTML('Roles & Technicians')
-            ) : (
-              <>
-                <div className="table-toolbar">
-                  <button
-                    className="btn btn-sm btn-outline"
-                    onClick={() => showToast('Re-syncing all roles…')}
-                  >
-                    Re-sync category
-                  </button>
-                </div>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Role</th>
-                      <th>Permission level</th>
-                      <th>Assigned users</th>
-                      <th>Scope</th>
-                      <th>Confidence</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assetTables.roles.map((role, i) => (
-                      <tr key={i}>
-                        <td>
-                          <button
-                            className="item-name-link"
-                            onClick={() => onShowItemDetail('roles', i)}
-                          >
-                            {role.name}
-                          </button>
-                        </td>
-                        <td>{role.permissionLevel}</td>
-                        <td>{role.users}</td>
-                        <td>{role.scope}</td>
-                        <td>
-                          <span className={`pill ${confidencePillClass(role.confidence)}`}>
-                            {role.confidence}
-                          </span>
-                        </td>
-                        <td>
-                          <button
-                            className="icon-btn"
-                            title="Re-sync"
-                            onClick={() => showToast(`Re-syncing ${role.name}…`)}
-                          >
-                            <RefreshIcon size={15} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
-          </div>
-        )}
 
         {/* ========================================================
             9. SYNC HISTORY TAB
